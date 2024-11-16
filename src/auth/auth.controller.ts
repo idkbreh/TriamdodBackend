@@ -1,36 +1,80 @@
-import { Controller, Request, Post, UseGuards, Body } from '@nestjs/common';
+import { Controller, Request, Post, UseGuards, Body,UnauthorizedException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './local-auth.guard';
+import { CsvService } from 'src/csv/csv.service';
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(private authService: AuthService,private csvService: CsvService,) {}
 
   @UseGuards(LocalAuthGuard)
   @Post('login')
-  @ApiOperation({ summary: 'Login user' })
-  @ApiBody({ schema: { example: { username: 'user1', password: 'password1' } } })
-  @ApiResponse({ status: 201, description: 'Successful login' })
   async login(@Request() req) {
     return this.authService.login(req.user);
   }
-
-  @Post('register')
-  @ApiOperation({ summary: 'Register user' })
-  @ApiBody({ schema: { example: { username: 'user1', password: 'password1' } } })
-  @ApiResponse({ status: 201, description: 'Successful registration' })
-  async register(@Body() body: { username: string, password: string }) {
-    const { username, password } = body;
-    return this.authService.register(username, password);
+  @Post('status')
+  async getUsername(@Body('token') token: string) {
+    try {
+      const result = await this.authService.validateTokenAndGetUserData(token);
+      if (!result.valid || !result.user) {
+        throw new UnauthorizedException('Invalid token or user not found');
+      }
+      return { studentid: result.user.username ,status:result.user.status};
+    } catch (error) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
   }
 
-  @Post('token')
-  @ApiOperation({ summary: 'Check if token is valid' })
+//   @Post('booking')
+//   async book(@Body() body: { studentId: string }) {
+//   const { studentId } = body;
+//   return this.authService.book(studentId);
+// }
+
+@Post('register')
+async register(@Body() body: { studentId: string, password: string, password2: string, birthdate: string }) {
+  const { studentId, password, password2, birthdate } = body;
+
+  if (password !== password2) {
+    return { success: false, message: 'Passwords do not match' };
+  }
+
+  const student = this.csvService.findStudent(studentId, birthdate);
+  if (!student) {
+    return { success: false, message: 'Student ID or birthdate not found in CSV' };
+  }
+
+  const userExists = await this.authService.checkUserExists(studentId);
+  if (userExists) {
+    return { success: false, message: 'Student ID already registered' };
+  }
+
+  const fullName = `${student.firstname} ${student.secondname}`;
+  return this.authService.register(studentId, password, fullName);
+}
+
+  @Post('check-status')
+  @ApiOperation({ summary: 'Check user status by token' })
   @ApiBody({ schema: { example: { token: 'your_jwt_token' } } })
-  @ApiResponse({ status: 200, description: 'Token validation result', schema: { example: { valid: true } } })
-  async checkToken(@Body() body: { token: string }): Promise<{ valid: boolean }> {
-    const isValid = await this.authService.validateToken(body.token); // รับค่าเข้าไปละทำการ execute function ที่อยู่ใน Class authService
-    return { valid: isValid };
+  @ApiResponse({ status: 200, description: 'User status', schema: { example: { status: 'active' } } })
+  async checkStatus(@Body('token') token: string): Promise<{ status: string }> {
+    try {
+      const result = await this.authService.validateTokenAndGetUserData(token);
+      if (!result.valid || !result.user) {
+        throw new UnauthorizedException('Invalid token or user not found');
+      }
+      return { status: result.user.status };
+    } catch (error) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+  }
+  @Post('token')
+  @ApiOperation({ summary: 'Check if token is valid and return user data' })
+  @ApiBody({ schema: { example: { token: 'your_jwt_token' } } })
+  @ApiResponse({ status: 200, description: 'Token validation result with user data', schema: { example: { valid: true, user: { username: 'john_doe', status: 'active', ticket: true } } } })
+  async checkToken(@Body() body: { token: string }): Promise<{ valid: boolean, user?: { username: string, status: string, ticket: boolean } }> {
+    const result = await this.authService.validateToken(body.token);
+    return {valid:result};
   }
 }

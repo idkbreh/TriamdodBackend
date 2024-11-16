@@ -7,7 +7,7 @@ import { LocalStrategy } from './local.strategy';
 import { JwtStrategy } from './jwt.strategy';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller'; // Import AuthController
-
+import { CsvService } from 'src/csv/csv.service';
 @Module({
   imports: [
     ConfigModule,
@@ -22,8 +22,8 @@ import { AuthController } from './auth.controller'; // Import AuthController
       inject: [ConfigService],
     }),
   ],
-  controllers: [AuthController], // Add AuthController here
-  providers: [AuthService, LocalStrategy, JwtStrategy],
+  controllers: [AuthController],
+  providers: [AuthService, LocalStrategy, JwtStrategy,CsvService],
   exports: [AuthService],
 })
 export class AuthModule {}
